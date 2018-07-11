@@ -83,7 +83,6 @@ struct VectorF{
 		HANDLE_ERROR( cudaFree(data) );
 	}
 
-	__host__
 	void print(){
 		printVec<<<1,1>>>(N,data);
 	}
@@ -208,6 +207,23 @@ static VectorF operator+ (const VectorF& v1,const VectorF& v2){
 	return result;
 }
 
+static VectorF operator- (const VectorF& v1,const VectorF& v2){
+	assert (v2.N==v1.N);
+	VectorF result(v1);
+	float neg_one = -1.f;
+	HANDLE_ERROR ( cublasSaxpy(cublas_handle,v1.N,&neg_one,v2.data,1,result.data,1)  );
+	return result;
+}
+
+static VectorF operator-(const VectorF& v){
+	VectorF result(v);
+	float r = -1;
+	HANDLE_ERROR ( cublasSscal(cublas_handle,v.N,&r,result.data,1)  );
+	return result;
+}
+
+
+
 static VectorF operator*(const VectorF& v, float f){
 	VectorF result(v);
 	float r = f;
@@ -227,6 +243,23 @@ static MatrixF operator+ (const MatrixF& m1,const MatrixF& m2){
 	HANDLE_ERROR ( cublasSaxpy(cublas_handle,m1.rows*m1.cols,&one,m2.data,1,result.data,1)  );
 	return result;
 }
+
+static MatrixF operator- (const MatrixF& m1,const MatrixF& m2){
+	assert (m2.rows==m1.rows);
+	assert (m2.cols==m1.cols);
+	MatrixF result(m1);
+	float neg_one = -1.f;
+	HANDLE_ERROR ( cublasSaxpy(cublas_handle,m1.rows*m1.cols,&neg_one,m2.data,1,result.data,1)  );
+	return result;
+}
+
+static MatrixF operator-(const MatrixF& m){
+	MatrixF result(m);
+	float r = -1;
+	HANDLE_ERROR ( cublasSscal(cublas_handle,m.rows*m.cols,&r,result.data,1)   );
+	return result;
+}
+
 
 static MatrixF operator*(const MatrixF& m, float f){
 	MatrixF result(m);

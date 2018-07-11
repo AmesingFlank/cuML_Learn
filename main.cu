@@ -18,6 +18,7 @@
 #include <vector>
 #include <iostream>
 #include "NN/LA.h"
+//#include "NN/Network.h"
 using namespace std;
 
 cublasHandle_t cublas_handle = nullptr;
@@ -70,6 +71,17 @@ int main( void ) {
 
 	m6.print();
 	m6.transpose().print();
+
+	(v1-v2).print();
+
+	(m1-m2).print();
+
+	(-v1).print();
+
+	(-m1).print();
+
+	(m1-(-m2)).print();
+
 
 	cudaDeviceSynchronize();
     return 0;
