@@ -8,6 +8,11 @@
 
 
 extern cublasHandle_t cublas_handle;
+extern int dataCount;
+
+void printDataCount(){
+
+}
 
 __global__
 void printVec(int N, float* data){
@@ -28,6 +33,21 @@ void printMat(int rows,int cols, float* data){
 		gout<<gendl;
 	}
 	gout<<gendl;
+}
+
+
+template <typename Func>
+__global__
+void unaryExprKernel(float* data,Func f){
+	int offset = threadIdx.x;
+	data[offset] = f(data[offset]);
+}
+
+template <typename Func>
+__global__
+void binaryOperatorKernel(float* data1,float* data2, float* data3, Func f){
+	int offset = threadIdx.x;
+	data3[offset] = f(data1[offset],data2[offset]);
 }
 
 struct VectorF{
@@ -58,6 +78,9 @@ struct VectorF{
 
 	//copy assignment
 	VectorF& operator=(const VectorF& v){
+		free();
+		N = v.N;
+		initData();
 		copyFrom(v.N,v.data);
 		return *this;
 	}
@@ -69,6 +92,7 @@ struct VectorF{
 
 	//move assignment
 	VectorF& operator=(VectorF&& v){
+		free();
 		N = v.N;
 		data = v.data;
 		v.data = nullptr;
@@ -77,10 +101,15 @@ struct VectorF{
 
 	void initData(){
 		HANDLE_ERROR( cudaMalloc (&data,N*sizeof(*data)) );
+		++dataCount;
+		printDataCount();
 	}
 
 	void free(){
 		HANDLE_ERROR( cudaFree(data) );
+		if (data!=nullptr) --dataCount;
+		printDataCount();
+		data = nullptr;
 	}
 
 	void print(){
@@ -91,10 +120,28 @@ struct VectorF{
 		free();
 	}
 
-	float length(){
+	float modulus(){
 		float result;
 		HANDLE_ERROR( cublasSnrm2(cublas_handle,N,data,1,&result) );
 		return result;
+	}
+
+	float operator[](int i){
+		float result = 0;
+		HANDLE_ERROR( cudaMemcpy(&result,data+i,sizeof(*data), cudaMemcpyDeviceToHost) );
+		return result;
+	}
+
+	void set(int i,float f){
+		assert(i<N);
+		HANDLE_ERROR( cudaMemcpy(data+i,&f,sizeof(*data), cudaMemcpyHostToDevice) );
+	}
+
+	template <typename Func>
+	VectorF unaryExpr(Func f){
+		VectorF v(N,data);
+		unaryExprKernel<<<1,v.N>>>(v.data,f);
+		return v;
 	}
 
 };
@@ -105,7 +152,11 @@ static VectorF newVectorFromRAM(int N, float* data){
 	HANDLE_ERROR( cudaMemcpy(v.data,data,N*sizeof(*data), cudaMemcpyHostToDevice) );
 	return v;
 }
-
+static VectorF newZeroVector(int N){
+	VectorF v(N);
+	HANDLE_ERROR( cudaMemset(v.data,0,N*sizeof(*v.data)) );
+	return v;
+}
 
 struct MatrixF{
 	int rows;
@@ -139,6 +190,10 @@ struct MatrixF{
 
 	//copy assignment
 	MatrixF& operator=(const MatrixF& m){
+		free();
+		rows = m.rows;
+		cols = m.cols;
+		initData();
 		copyFrom(m.rows,m.cols,m.data);
 		return *this;
 	}
@@ -150,6 +205,7 @@ struct MatrixF{
 
 	//move assignment
 	MatrixF& operator=(MatrixF&& m){
+		free();
 		rows = m.rows;
 		cols = m.cols;
 		data = m.data;
@@ -160,10 +216,16 @@ struct MatrixF{
 
 	void initData(){
 		HANDLE_ERROR( cudaMalloc (&data,rows*cols*sizeof(*data)) );
+		++dataCount;
+		printDataCount();
 	}
 
 	void free(){
 		HANDLE_ERROR( cudaFree(data) );
+		if (data!=nullptr) --dataCount;
+		printDataCount();
+		data = nullptr;
+
 	}
 
 	void print(){
@@ -181,6 +243,13 @@ struct MatrixF{
 		HANDLE_ERROR( cublasSgeam(cublas_handle,CUBLAS_OP_T,CUBLAS_OP_T,cols,rows,&one,data,rows,&zero,data,rows,result.data,result.rows) );
 		return result;
 	}
+
+	template <typename Func>
+	MatrixF unaryExpr(Func f){
+		MatrixF v(rows,cols,data);
+		unaryExprKernel<<<1,rows*cols>>>(v.data,f);
+		return v;
+	}
 };
 
 static MatrixF newMatrixFromRAM(int rows,int cols, float* data){
@@ -189,7 +258,11 @@ static MatrixF newMatrixFromRAM(int rows,int cols, float* data){
 	return m;
 }
 
-
+static MatrixF newZeroMatrix(int rows,int cols){
+	MatrixF m(rows,cols);
+	HANDLE_ERROR( cudaMemset(m.data,0,rows*cols*sizeof(*m.data)) );
+	return m;
+}
 
 static float dot(VectorF& a,VectorF& b){
 	assert (a.N==b.N);
@@ -222,6 +295,12 @@ static VectorF operator-(const VectorF& v){
 	return result;
 }
 
+static VectorF operator/(const VectorF& v, float f){
+	VectorF result(v);
+	float r = 1.f/f;
+	HANDLE_ERROR ( cublasSscal(cublas_handle,v.N,&r,result.data,1)  );
+	return result;
+}
 
 
 static VectorF operator*(const VectorF& v, float f){
@@ -260,6 +339,12 @@ static MatrixF operator-(const MatrixF& m){
 	return result;
 }
 
+static MatrixF operator/(const MatrixF& m, float f){
+	MatrixF result(m);
+	float r = 1.f/f;
+	HANDLE_ERROR ( cublasSscal(cublas_handle,m.rows*m.cols,&r,result.data,1)   );
+	return result;
+}
 
 static MatrixF operator*(const MatrixF& m, float f){
 	MatrixF result(m);
@@ -288,6 +373,39 @@ static VectorF operator* (const MatrixF& m,const VectorF& v){
 	float zero = 0.f;
 	HANDLE_ERROR ( cublasSgemv(cublas_handle,CUBLAS_OP_N,m.rows,m.cols,&one,m.data,m.rows,v.data,1,&zero, result.data,1)  );
 	return result;
+}
+
+template<typename Func>
+static VectorF binaryOperator(const VectorF& v1,const VectorF& v2, Func f){
+	assert(v1.N==v2.N);
+	VectorF result(v1.N);
+	binaryOperatorKernel<<<1,v1.N>>>(v1.data,v2.data,result.data,f);
+	return result;
+}
+
+template<typename Func>
+static MatrixF binaryOperator(const MatrixF& m1,const MatrixF& m2, Func f){
+	assert(m1.rows==m2.rows);
+	assert(m1.cols==m2.cols);
+	MatrixF result(m1.rows,m1.cols);
+	binaryOperatorKernel<<<1,m1.rows*m1.cols>>>(m1.data,m2.data,result.data,f);
+	return result;
+}
+
+MatrixF columnMatrix(VectorF vec){
+	MatrixF result(vec.N,1);
+	result.copyFrom(vec.N,1,vec.data);
+	return result;
+}
+MatrixF rowMatrix(VectorF vec){
+	return columnMatrix(vec).transpose();
+}
+
+VectorF cwiseProduct(VectorF v1,VectorF v2){
+	auto lambda = []__device__(float f1,float f2)->float{
+		return f1*f2;
+	};
+	return binaryOperator(v1,v2,lambda);
 }
 
 

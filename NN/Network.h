@@ -8,6 +8,28 @@
 
 using namespace std;
 
+inline VectorF cost_delta(VectorF z, VectorF a,VectorF y ){
+	return (a-y);//cross-entropy cost
+	//return cwiseProduct((a-y),sigmoid_prime(z));//quadratic cost
+}
+
+
+inline VectorF sigmoid(VectorF input){
+	auto lambda = []__device__ (float f) -> float{
+		return 1.f/(1.f+exp(-f));
+	};
+	return input.unaryExpr(lambda);
+}
+
+inline VectorF sigmoid_prime(VectorF input){
+	auto lambda = []__device__ (float f) -> float{
+		float sig=1.f/(1.f+exp(-f));
+		return sig*(1.0-sig);
+	};
+	return input.unaryExpr(lambda);
+}
+
+
 class Network{
 public:
     vector<MatrixF> weights;
@@ -25,10 +47,8 @@ public:
         std::normal_distribution<> biasDistribution{0,1};
 
         for (int i = 0; i <sizes.size()-1 ; ++i) {
-
-
-            float* weightData = malloc( sizes[i+1]*sizes[i]*sizeof(*weightData));
-            float* biasData = malloc(sizes[i+1]*sizeof(*biasData));
+            float* weightData = (float*) malloc( sizes[i+1]*sizes[i]*sizeof(*weightData));
+            float* biasData = (float*) malloc(sizes[i+1]*sizeof(*biasData));
 
             std::normal_distribution<> weightDistribution{0,1/sqrt(sizes[i])};
 
@@ -37,7 +57,7 @@ public:
             }
 
             for(int b = 0;b<sizes[i+1];++b){
-            	biasData = biasDistribution(gen);
+            	biasData[b] = biasDistribution(gen);
             }
 
             weights.emplace_back(newMatrixFromRAM(sizes[i+1],sizes[i],weightData));
@@ -49,28 +69,7 @@ public:
     }
 
 
-    inline VectorF cost_delta(VectorF z, VectorF a,VectorF y ){
-        return (a-y);//cross-entropy cost
-        return (a-y).cwiseProduct(sigmoid_prime(z));//quadratic cost
-    }
 
-
-
-
-    inline VectorF sigmoid(VectorF input){
-        for (int i = 0; i < input.size(); ++i) {
-            input[i]= 1.0/(1.0+exp(-input[i]));
-        }
-        return input;
-    }
-
-    inline VectorF sigmoid_prime(VectorF input){
-        for (int i = 0; i < input.size(); ++i) {
-            double sig=1.0/(1.0+exp(-input[i]));
-            input[i]= sig*(1.0-sig);
-        }
-        return input;
-    }
 
     inline VectorF feedForward(VectorF input){
         for (int i = 0; i < size.size()-1; ++i) {
@@ -81,7 +80,7 @@ public:
         return input;
     }
 
-    void train(vector<VectorF>& images,vector<int>& labels,int epochs,int batch_size,double eta,double lambda){
+    void train(vector<VectorF>& images,vector<int>& labels,int epochs,int batch_size,float eta,float lambda){
         for (int i = 0; i <epochs ; ++i) {
             auto time=std::time(0);
             std::default_random_engine generatorW(time);
@@ -97,17 +96,17 @@ public:
     }
 
     inline VectorF getCorrectOutput (int label){
-        VectorF result=VectorF::Zero(10);
-        result[label]=1;
+        VectorF result(10);
+        result.set(label,1.f);
         return result;
     }
 
-    void train_batch(const vector<VectorF>& images,const vector<int>& labels,int start,int batch_size,double eta,double lambda){
+    void train_batch(const vector<VectorF>& images,const vector<int>& labels,int start,int batch_size,float eta,float lambda){
         vector<MatrixF> nablaW;
         vector<VectorF> nablaB;
         for (int i = 0; i <size.size()-1 ; ++i) {
-            nablaW.emplace_back(MatrixF::Zero(size[i+1],size[i]));
-            nablaB.emplace_back(VectorF::Zero(size[i+1]));
+            nablaW.emplace_back(newZeroMatrix(size[i+1],size[i]));
+            nablaB.emplace_back(newZeroVector(size[i+1]));
         }
 
         MatrixF& w0=weights[0];
@@ -130,20 +129,20 @@ public:
         }
 
         for (int i = 0; i <nablaW.size() ; ++i) {
-            weights[i]=(1.0-(eta*lambda/(double)images.size()))*weights[i]-nablaW[i]*eta/(double)batch_size;
-            bias[i]=bias[i]-nablaB[i]*eta/(double)batch_size;
+            weights[i]=(1.0-(eta*lambda/(float)images.size()))*weights[i]-nablaW[i]*eta/(float)batch_size;
+            bias[i]=bias[i]-nablaB[i]*eta/(float)batch_size;
         }
 
         return;
 
     }
 
-    pair<vector<MatrixF>,vector<VectorF>> backPropogation(VectorF input,int label){
+    pair<vector<MatrixF>,vector<VectorF>> backPropogation(const VectorF& input,int label){
         vector<MatrixF> nablaW;
         vector<VectorF> nablaB;
         for (int i = 0; i <size.size()-1 ; ++i) {
-            nablaW.emplace_back(MatrixF::Zero(size[i+1],size[i]));
-            nablaB.emplace_back(VectorF::Zero(size[i+1]));
+            nablaW.emplace_back(newZeroMatrix(size[i+1],size[i]));
+            nablaB.emplace_back(newZeroVector(size[i+1]));
         }
         VectorF activation = input;
         vector<VectorF> activations={activation};
@@ -163,7 +162,7 @@ public:
 
 
         for (int i = size.size()-3; i >=0 ; --i) {
-            delta=sigmoid_prime(zs[i]).cwiseProduct( weights[i+1].transpose()*delta );
+            delta=cwiseProduct(sigmoid_prime(zs[i]),weights[i+1].transpose()*delta );
             nablaB[i]=delta;
             nablaW[i]=columnMatrix(delta)*rowMatrix(activations[i]);
         }
@@ -179,33 +178,18 @@ public:
         }
         cout<<"Total: "<<images.size()<<endl;
         cout<<"Correct: "<<correct<<endl;
-        cout<<"Percentage: "<<(double)correct/(double)images.size()<<endl;
+        cout<<"Ratio: "<<(float)correct/(float)images.size()<<endl;
     }
 
     void testSingle(VectorF image){
         auto result=feedForward(image);
         for (int i = 0; i <10 ; ++i) {
-            cout<<i<<":  "<<result[i]<<endl;
+            std::cout<<i<<":  "<<result[i]<<std::endl;
         }
-    }
-
-    inline MatrixF columnMatrix(VectorF vec){
-        MatrixF result(vec.size(),1);
-        for (int i = 0; i <vec.size() ; ++i) {
-            result(i,0)=vec[i];
-        }
-        return result;
-    }
-    inline MatrixF rowMatrix(VectorF vec){
-        return columnMatrix(vec).transpose();
     }
 
 
 };
 
-static inline void debug(){
-    int i=0;
-    i++;
-}
 
 #endif //CUML_LEARN_NETWORK_H

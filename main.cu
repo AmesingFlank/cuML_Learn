@@ -18,71 +18,37 @@
 #include <vector>
 #include <iostream>
 #include "NN/LA.h"
-//#include "NN/Network.h"
+#include "NN/Network.h"
+#include "NN/MNIST_Loader.h"
 using namespace std;
 
 cublasHandle_t cublas_handle = nullptr;
+int dataCount = 0;
+
 
 int main( void ) {
 	initCUDA();
 
-	std::cout<<"Hello Cuda"<<std::endl;
-
-	float f1[3] = {1.f,2.f,3.f};
-	VectorF v1 = newVectorFromRAM(3,f1);
-	v1.print();
-
-	float f2[3] = {4.f,5.f,6.f};
-	VectorF v2 = newVectorFromRAM(3,f2);
-	v2.print();
-
-	cout<<dot(v1,v2)<<endl;
-
-	VectorF v3 = v1+v2;
-	v3.print();
-
-	VectorF v4 = 3*v1;
-	v4.print();
-
-	float mf1[9] = {1,2,3,4,5,6,7,8,9};
-	MatrixF m1 = newMatrixFromRAM(3,3,mf1);
-	m1.print();
-
-	float mf2[9] = {1,2,3,4,5,6,7,8,9};
-	MatrixF m2 = newMatrixFromRAM(3,3,mf2);
-	m2.print();
-
-	MatrixF m3 = m1+m2;
-	m3.print();
-
-	MatrixF m4 = m3*3;
-	m4.print();
-
-	MatrixF m5 = m1*m2;
-	m5.print();
-
-	float mf6[9] = {1,2,3,4,5,6};
-	MatrixF m6 = newMatrixFromRAM(2,3,mf6);
-	VectorF v5 = m6*v1;
-	v5.print();
-
-	cout<<v1.length()<<endl;
-
-
-	m6.print();
-	m6.transpose().print();
-
-	(v1-v2).print();
-
-	(m1-m2).print();
-
-	(-v1).print();
-
-	(-m1).print();
-
-	(m1-(-m2)).print();
-
-
-	cudaDeviceSynchronize();
+	string command;
+	Network network({28*28,30,10});
+	cout<<"loading"<<endl;
+	string dir="/Users/AmesingFlank/cuda-workspace/cuML_Learn/Debug/";
+	auto train_image=load_image(dir+"train-images-idx3-ubyte");
+	auto train_label=load_label(dir+"train-labels-idx1-ubyte");
+	auto test_image=load_image(dir+"t10k-images-idx3-ubyte");
+	auto test_label=load_label(dir+"t10k-labels-idx1-ubyte");
+	while(command!="stop"){
+		cout<<"please input command"<<endl;
+		cin>>command;
+		if(command=="train"){
+			int epoch,batch_size;
+			double eta,lambda;
+			cin>>epoch>>batch_size>>eta>> lambda;
+			network.train(train_image,train_label,epoch,batch_size,eta,lambda);
+		}
+		else if(command=="test"){
+			network.test(test_image,test_label);
+		}
+	}
     return 0;
 }

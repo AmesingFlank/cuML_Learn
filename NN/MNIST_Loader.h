@@ -3,7 +3,7 @@
 
 #include <vector>
 #include <fstream>
-#include <LA.h>
+#include "LA.h"
 
 
 using namespace std;
@@ -17,89 +17,80 @@ static int to_int(char* p)
 
 static vector<int> load_label(string path){
     ifstream file(path,ios::in|ios::binary);
-    if(file){
-        file.seekg(0,ios::end);
-        auto size=file.tellg();
-        file.seekg(0,ios::beg);
+    assert(file);
+    file.seekg(0,ios::end);
+	auto size=file.tellg();
+	file.seekg(0,ios::beg);
 
-        char keyData[4];
-        file.read(keyData,4);
-        int key=to_int(keyData);
-        if(key!=0x801){
-            cerr<<"incorrect file"<<endl;
-        }
-        else{
+	char keyData[4];
+	file.read(keyData,4);
+	int key=to_int(keyData);
+	assert(key==0x801);
 
-            char imageCountData[4];
-            file.read(imageCountData,4);
-            int imageCount=to_int(imageCountData);
+	char imageCountData[4];
+	file.read(imageCountData,4);
+	int imageCount=to_int(imageCountData);
 
-            if(imageCount>50000) imageCount=50000;
+	if(imageCount>50000) imageCount=50000;
 
-            vector<int> result;
+	vector<int> result;
 
-            for (int i = 0; i <imageCount ; ++i) {
-                char thisImage[1];
-                file.read(thisImage,1);
-                result.emplace_back(thisImage[0]);
-            }
-            file.close();
-            return result;
-        }
-    }
+	for (int i = 0; i <imageCount ; ++i) {
+		char thisImage[1];
+		file.read(thisImage,1);
+		result.emplace_back(thisImage[0]);
+	}
+	file.close();
+	return result;
 };
 
 
 static vector<VectorF> load_image(string path){
     ifstream file(path,ios::in|ios::binary);
-    if(file){
-        file.seekg(0,ios::end);
-        auto size=file.tellg();
-        file.seekg(0,ios::beg);
+    assert(file);
+    file.seekg(0,ios::end);
+	auto size=file.tellg();
+	file.seekg(0,ios::beg);
 
-        char keyData[4];
-        file.read(keyData,4);
-        int key=to_int(keyData);
-        if(key!=0x803){
-            cerr<<"incorrect file"<<endl;
-        }
-        else{
+	char keyData[4];
+	file.read(keyData,4);
+	int key=to_int(keyData);
 
-            char imageCountData[4];
-            file.read(imageCountData,4);
-            int imageCount=to_int(imageCountData);
+	assert(key==0x803);
 
-            if(imageCount>50000) imageCount=50000;
+	char imageCountData[4];
+	file.read(imageCountData,4);
+	int imageCount=to_int(imageCountData);
 
-            char rowsData[4];
-            file.read(rowsData,4);
-            int rows=to_int(rowsData);
+	if(imageCount>50000) imageCount=50000;
 
-            char colsData[4];
-            file.read(colsData,4);
-            int cols=to_int(colsData);
+	char rowsData[4];
+	file.read(rowsData,4);
+	int rows=to_int(rowsData);
 
-            int imageSize=rows*cols;
+	char colsData[4];
+	file.read(colsData,4);
+	int cols=to_int(colsData);
 
-            vector<VectorF> result;
+	int imageSize=rows*cols;
 
-            float* singleImageData = malloc(imageSize* sizeof(*singleImageData));
+	vector<VectorF> result;
 
-            for (int i = 0; i <imageCount ; ++i) {
-                char thisImage[imageSize];
-                file.read(thisImage,imageSize);
-                for (int pixel = 0; pixel < imageSize; ++pixel) {
-                    unsigned char thisPixelData=thisImage[pixel];
-                    float thisPixel= (float)thisPixelData/255.f;
-                    singleImageData[pixel]=thisPixel;
-                }
-                result.emplace_back(newVectorFromRAM(imageSize,singleImageData));
-            }
-            file.close();
-            free(singleImageData);
-            return result;
-        }
-    }
+	float* singleImageData =(float*) malloc(imageSize* sizeof(*singleImageData));
+
+	for (int i = 0; i <imageCount ; ++i) {
+		char thisImage[imageSize];
+		file.read(thisImage,imageSize);
+		for (int pixel = 0; pixel < imageSize; ++pixel) {
+			unsigned char thisPixelData=thisImage[pixel];
+			float thisPixel= (float)thisPixelData/255.f;
+			singleImageData[pixel]=thisPixel;
+		}
+		result.emplace_back(newVectorFromRAM(imageSize,singleImageData));
+	}
+	file.close();
+	free(singleImageData);
+	return result;
 };
 
 
